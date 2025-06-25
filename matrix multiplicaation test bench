@@ -1,0 +1,91 @@
+`timescale 1ns / 1ps
+//////////////////////////////////////////////////////////////////////////////////
+// Company: IIT GN
+// Engineer: CHINMAY KULKARNI
+// Design Name: RISC 32BIT PIPELINED PROCESSOR
+// Module Name: MATRIX_MUL_2X2_tb
+//////////////////////////////////////////////////////////////////////////////////
+
+module MATRIX_MUL_2X2_tb();
+reg clk1,clk2;
+integer k;
+//parameter
+risc_32bit_pipeline risc(clk1,clk2);
+
+initial
+begin
+clk1=0;clk2=0;
+#40;
+forever begin
+#10;clk1=1;#10; clk1=0;
+#10;clk2=1;#10;clk2=0;
+end
+end
+// A= | 100  200|
+//    | 400  100|
+    
+//B=  | 200  100|
+//    | 100  250|
+//martrix multiply C=AXB 
+//Ais stored in 1st 4 registers (1-4) and
+// b is in next 4 (5-8)
+//and c will be stored in next 4 registers (9-12)
+//remaining registers will be used for off set for addition of values
+
+initial// starting regster appending with 2 input matrix
+begin
+risc.REG[0]=0 ;
+//A
+risc.REG[1]=100 ;
+risc.REG[2]=200 ;
+risc.REG[3]=400 ;
+risc.REG[4]=100 ;
+//B
+risc.REG[5]=200 ;
+risc.REG[6]=100 ;
+risc.REG[7]=100 ;
+risc.REG[8]=250 ;
+
+end
+
+initial
+begin
+risc.EX_MEM_IR[31:26]=6'b001110;
+risc.EX_MEM_cond=0;
+risc.halted=0;
+risc.branch=0;
+risc.PC=0;
+end
+
+initial
+begin
+risc.MEM[0] ={6'b000101, 5'd1 , 5'd5 , 5'd13 ,11'd0};// MUL R13  R1 R5 
+risc.MEM[1] ={6'b000101, 5'd2 , 5'd7 , 5'd14 ,11'd0};// MUL R14  R2 R7 
+risc.MEM[2] ={6'b000101, 5'd1 , 5'd6 , 5'd15 ,11'd0};// MUL R15  R1 R6 
+risc.MEM[3] ={6'b000101, 5'd2 , 5'd8 , 5'd16 ,11'd0};// MUL R16  R2 R8 
+risc.MEM[4] ={6'b000101, 5'd3 , 5'd5 , 5'd17 ,11'd0};// MUL R17  R3 R5 
+risc.MEM[5] ={6'b000101, 5'd4 , 5'd7 , 5'd18 ,11'd0};// MUL R18  R4 R7 
+risc.MEM[6] ={6'b000101, 5'd3 , 5'd6 , 5'd19 ,11'd0};// MUL R19  R3 R6 
+risc.MEM[7] ={6'b000101, 5'd4 , 5'd8 , 5'd20 ,11'd0};// MUL R20  R4 R8 
+
+risc.MEM[8] ={6'b000000, 5'd13, 5'd14, 5'd9 ,11'd0};// ADD R9   R13 R14
+risc.MEM[9] ={6'b000000, 5'd15, 5'd16, 5'd10 ,11'd0};// ADD R10  R15 R16 
+risc.MEM[10] ={6'b000000, 5'd17, 5'd18, 5'd11 ,11'd0};// ADD R11  R17 R18 
+risc.MEM[11] ={6'b000000, 5'd19, 5'd20, 5'd12 ,11'd0};// ADD R12  R19 R20 
+end
+
+initial//output c cheak
+begin
+#1500;
+$display("C[1][1]=%4d",risc.REG[9]);
+$display("C[1][2]=%4d",risc.REG[10]);
+$display("C[2][1]=%4d",risc.REG[11]);
+$display("C[2][2]=%4d",risc.REG[12]);
+//C[1][1]=40000
+//C[1][2]=60000
+//C[2][1]=90000
+//C[2][2]=65000
+$finish;
+end
+
+endmodule
