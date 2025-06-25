@@ -1,0 +1,195 @@
+`timescale 1ns / 1ps
+//////////////////////////////////////////////////////////////////////////////////
+// Company: IIT GN
+// Engineer: CHINMAY KULKARNI
+// 
+// Create Date: 23.02.2025 18:14:16
+// Design Name: RISC 32BIT PIPELINED PROCESSOR
+// Module Name: risc_32bit_piprline
+///////////////////////////////////////////////////////////////////////////////////
+module risc_32bit_pipeline(input clk1,clk2);
+//memory and reg bank
+reg [31:0]REG[0:31];
+reg [31:0]MEM[0:63];
+
+//program counter
+reg [31:0]PC;
+
+//1st latches IF_ID
+reg [31:0] IF_ID_IR,IF_ID_NPC;
+
+//2nd latches ID_EX
+reg [31:0] ID_EX_IR,ID_EX_NPC,ID_EX_A,ID_EX_B,ID_EX_IMM;
+
+
+//3rd Latches EX_MEM
+reg EX_MEM_cond;
+reg [31:0]EX_MEM_ALUout,EX_MEM_B,EX_MEM_IR;
+
+//4th Latches MEM_WB
+
+reg [31:0] MEM_WB_IR,MEM_WB_ALUout,MEM_WB_LMD;//lmd=load memory data
+
+//reg for identifying type of instruction and more
+reg[2:0] ID_EX_TYPE,EX_MEM_TYPE,MEM_WB_TYPE;
+
+//op-coad parameters
+parameter 
+ADD=6'b000000,//R TYPE
+SUB=6'b000001,
+AND=6'b000010,
+OR=6'b000011,
+SLT=6'b000100,//set less than
+MUL=6'b000101,
+HLT=6'b111111,
+//I TYPE
+LW=6'b001000,
+SW=6'b001001,
+ADDI=6'b001010,
+SUBI=6'b001011,
+SLTI=6'b001100,
+///BRANCH
+BNEQZ=6'b001101,//branch not equal to zero
+BEQZ=6'b001110;//branch equal to zero
+
+
+// PARAMETER FOR TYPE OF INSTRUCTION
+parameter
+RR_ALU=3'b000, 
+RM_ALU=3'b001,
+LOAD=3'b010,
+STORE=3'b011,
+BRANCH=3'b100,
+HALT=3'B101;
+
+///REG FOR HALT AND BRANCH FLAGS
+reg halted,branch;
+//ALU output
+wire [31:0]ALUout;
+
+//stage 1 IF instruction fetch
+always@(posedge clk1)
+if(halted==0)
+    begin
+        if(((EX_MEM_IR[31:26]==BEQZ) && (EX_MEM_cond==1))||((EX_MEM_IR[31:26]==BNEQZ) && (EX_MEM_cond==0)))//cheaking is we require to branching in prev instruction
+            begin
+                IF_ID_NPC<=  EX_MEM_ALUout+1;
+                PC<=  EX_MEM_ALUout+1;
+                branch<= 1'b1;
+                IF_ID_IR<= MEM[EX_MEM_ALUout];
+                end
+        else
+            begin
+                IF_ID_NPC<=  PC+1;
+                PC<= PC+1;
+                IF_ID_IR<=MEM[PC];
+                end
+     end   
+
+//ID STAGE
+always@(posedge clk2)
+    if(halted==0)
+        begin
+        //for 0 register
+            if(IF_ID_IR[25:21]==5'b00000) 
+                    ID_EX_A<=0;
+            else 
+                    ID_EX_A<= REG[IF_ID_IR[25:21]];//rs
+            
+            if(IF_ID_IR[20:16]==5'b00000) 
+                    ID_EX_B<=0;
+            else 
+                    ID_EX_B<= REG[IF_ID_IR[20:16]];//rt
+            
+            ID_EX_NPC<= IF_ID_NPC;
+            ID_EX_IR<= IF_ID_IR;
+            ID_EX_IMM<={{16{IF_ID_IR[15]}},{IF_ID_IR[15:0]}};//sign extention for 16 bit immidiate data 
+            
+            //opcode to type case
+            case(IF_ID_IR[31:26])
+                  ADD:  ID_EX_TYPE <=  RR_ALU;
+                  SUB:  ID_EX_TYPE <=  RR_ALU;
+                  AND:  ID_EX_TYPE <=  RR_ALU;
+                  OR:   ID_EX_TYPE <=  RR_ALU;
+                  SLT:  ID_EX_TYPE <=  RR_ALU;
+                  MUL:  ID_EX_TYPE <=  RR_ALU;
+                  ADDI: ID_EX_TYPE <=  RM_ALU;
+                  SUBI: ID_EX_TYPE <=  RM_ALU;
+                  SLTI: ID_EX_TYPE <=  RM_ALU;
+                  LW:   ID_EX_TYPE <=  LOAD;
+                  SW:   ID_EX_TYPE <=  STORE;
+                  BEQZ: ID_EX_TYPE <=  BRANCH;
+                  BNEQZ:ID_EX_TYPE <=  BRANCH;
+                  HALT: ID_EX_TYPE <=  HALT;
+              default: 
+                    ID_EX_TYPE <=  HALT;//default halt
+            endcase
+        end
+
+//EX STAGE
+ALU alu (
+    .A(ID_EX_A),               // 32-bit input A
+    .B(ID_EX_B),               // 32-bit input B
+    .IMM(ID_EX_IMM),           // 32-bit immediate value
+    .NPC(ID_EX_NPC),           // 32-bit next PC
+    .func(ID_EX_IR[31:26]),    // 6-bit function code from instruction
+    .type(ID_EX_TYPE),         // 3-bit ALU operation type
+    .ALUout(ALUout)            // 32-bit output
+);
+
+always@(posedge clk1)
+
+    if(halted==0)
+    begin
+        EX_MEM_TYPE<= ID_EX_TYPE;
+        EX_MEM_IR<= ID_EX_IR;
+        branch<= 0;
+        
+        case(ID_EX_TYPE)
+            LOAD,STORE:
+                  EX_MEM_B<=ID_EX_B;
+           
+            BRANCH:
+                EX_MEM_cond<=(ID_EX_A==0);
+        endcase
+        EX_MEM_ALUout<=ALUout;
+    end
+
+
+
+//MEM stage
+always@(posedge clk2)
+    if(halted==0)
+    begin
+        MEM_WB_TYPE<= EX_MEM_TYPE;
+        MEM_WB_IR<=EX_MEM_IR;
+        
+        case(EX_MEM_TYPE)
+            RR_ALU,RM_ALU: MEM_WB_ALUout<= EX_MEM_ALUout;
+            
+            LOAD:
+                  MEM_WB_LMD<= MEM[EX_MEM_ALUout];
+            
+            STORE:if(branch==0)                // disable write
+                     MEM[EX_MEM_ALUout]<= EX_MEM_B;
+    endcase
+    end
+
+
+//WB STAGE
+always@(posedge clk1)
+    if(branch==0)
+        case(MEM_WB_TYPE)
+            RR_ALU: REG[MEM_WB_IR[15:11]]<=  MEM_WB_ALUout;//rd
+            RM_ALU:REG[MEM_WB_IR[20:16]]<=  MEM_WB_ALUout;//rt
+            LOAD:REG[MEM_WB_IR[20:16]]<=  MEM_WB_ALUout;//rt
+            HALT:halted<=  1'b1;
+    endcase
+
+always @(posedge clk2) begin
+  if (halted) begin
+    PC <= PC; // Hold PC when halted
+  end
+end
+
+endmodule
